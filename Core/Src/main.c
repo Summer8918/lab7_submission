@@ -18,10 +18,15 @@
 /* USER CODE END Header */
 /* Includes ------------------------------------------------------------------*/
 #include "main.h"
+#include <stdio.h>
+#include <stdlib.h>
+#include "motor.h"
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+void LED_init(void);
+void  button_init(void);
+void HAL_SYSTICK_Callback(void);
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -53,13 +58,82 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+/* -------------------------------------------------------------------------------------------------------------
+ *  Global Variable Declarations
+ *  -------------------------------------------------------------------------------------------------------------
+ */
+volatile uint32_t debouncer;
 
+void LED_init(void) {
+    // Initialize PC8 and PC9 for LED's
+	  // Enable peripheral clock to GPIOC
+    RCC->AHBENR |= RCC_AHBENR_GPIOCEN;
+    // Set PC8 & PC9 to outputs	
+    GPIOC->MODER |= GPIO_MODER_MODER8_0 | GPIO_MODER_MODER9_0;    
+    // Set to push-pull output type	
+    GPIOC->OTYPER &= ~(GPIO_OTYPER_OT_8 | GPIO_OTYPER_OT_9);
+	  // Set to low speed
+    GPIOC->OSPEEDR &= ~((GPIO_OSPEEDR_OSPEEDR8_0 | GPIO_OSPEEDR_OSPEEDR8_1) |
+                        (GPIO_OSPEEDR_OSPEEDR9_0 | GPIO_OSPEEDR_OSPEEDR9_1));
+	  // Set to no pull-up/down
+    GPIOC->PUPDR &= ~((GPIO_PUPDR_PUPDR8_0 | GPIO_PUPDR_PUPDR8_1) |
+                      (GPIO_PUPDR_PUPDR9_0 | GPIO_PUPDR_PUPDR9_1));
+    // Shut off LED's
+	  GPIOC->ODR &= ~(GPIO_ODR_8 | GPIO_ODR_9);
+}
+
+void  button_init(void) {
+    // Initialize PA0 for button input
+	  // Enable peripheral clock to GPIOA
+    RCC->AHBENR |= RCC_AHBENR_GPIOAEN;
+	  // Set PA0 to input
+    GPIOA->MODER &= ~(GPIO_MODER_MODER0_0 | GPIO_MODER_MODER0_1);
+	  // Set to low speed
+    GPIOC->OSPEEDR &= ~(GPIO_OSPEEDR_OSPEEDR0_0 | GPIO_OSPEEDR_OSPEEDR0_1);
+	  // Set to pull-down
+    GPIOC->PUPDR |= GPIO_PUPDR_PUPDR0_1;                                        
+}
+
+/* Called by SysTick Interrupt
+ * Performs button debouncing, changes wave type on button rising edge
+ * Updates frequency output from ADC value
+ */
+void HAL_SYSTICK_Callback(void) {
+    // Remember that this function is called by the SysTick interrupt
+    // You can't call any functions in here that use delay
+
+    debouncer = (debouncer << 1);
+    if(GPIOA->IDR & (1 << 0)) {
+        debouncer |= 0x1;
+    }
+
+    if(debouncer == 0x7FFFFFFF) {
+    switch(target_rpm) {
+        case 80:
+            target_rpm = 50;
+            break;
+        case 50:
+            target_rpm = 81;
+            break;
+        case 0:
+            target_rpm = 80;
+            break;
+        default:
+            target_rpm = 0;
+            break;
+        }
+    }
+}
 /* USER CODE END 0 */
 
-/**
-  * @brief  The application entry point.
-  * @retval int
-  */
+/* -------------------------------------------------------------------------------------------------------------
+ * Main Program Code
+ *
+ * Starts initialization of peripherals
+ * Blinks green LED (PC9) in loop as heartbeat
+ * -------------------------------------------------------------------------------------------------------------
+ */
+volatile uint32_t encoder_count = 0;
 int main(void)
 {
   /* USER CODE BEGIN 1 */
@@ -84,7 +158,18 @@ int main(void)
 
   /* Initialize all configured peripherals */
   /* USER CODE BEGIN 2 */
+    debouncer = 0;                          // Initialize global variables
+		HAL_Init();															// Initialize HAL
+    LED_init();                             // Initialize LED's
+    button_init();                          // Initialize button
 
+    motor_init();                           // Initialize motor code
+
+    while (1) {
+        GPIOC->ODR ^= GPIO_ODR_9;           // Toggle green LED (heartbeat)
+        encoder_count = TIM2->CNT;
+        HAL_Delay(128);                      // Delay 1/8 second
+    }
   /* USER CODE END 2 */
 
   /* Infinite loop */
