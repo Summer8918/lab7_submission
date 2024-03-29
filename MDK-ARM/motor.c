@@ -12,6 +12,7 @@ volatile int8_t adc_value = 0;      	// ADC measured motor current
 volatile int16_t error = 0;         	// Speed error signal
 volatile uint8_t Kp = 1;            	// Proportional gain
 volatile uint8_t Ki = 1;            	// Integral gain
+volatile int16_t output = 0;
 
 // Sets up the entire motor drive system
 void motor_init(void) {
@@ -157,8 +158,9 @@ void PI_update(void) {
      * adc_value -> raw ADC counts to report current
      *
      */
-    
+    // 2 * 50 - x * 
     /// TODO: calculate error signal and write to "error" variable
+	  error = target_rpm * 2  - motor_speed;
     
     /* Hint: Remember that your calculated motor speed may not be directly in RPM!
      *       You will need to convert the target or encoder speeds to the same units.
@@ -166,9 +168,14 @@ void PI_update(void) {
      *       more resolution.
      */
     
-    
+    error_integral += error * Ki;
     /// TODO: Calculate integral portion of PI controller, write to "error_integral" variable
-    
+    if(error_integral > 3200) {
+			error_integral = 3200;
+		}
+		if (error_integral < 0) {
+        error_integral = 0;
+    }
     /// TODO: Clamp the value of the integral to a limited positive range
     
     /* Hint: The value clamp is needed to prevent excessive "windup" in the integral.
@@ -178,8 +185,8 @@ void PI_update(void) {
      */
     
     /// TODO: Calculate proportional portion, add integral and write to "output" variable
-    
-    int16_t output = 0; // Change this!
+    output = error_integral + error * Kp;
+    output = (output >> 5); // Change this!
     
     /* Because the calculated values for the PI controller are significantly larger than 
      * the allowable range for duty cycle, you'll need to divide the result down into 
@@ -200,10 +207,16 @@ void PI_update(void) {
      /// TODO: Divide the output into the proper range for output adjustment
      
      /// TODO: Clamp the output value between 0 and 100 
+    //output = 100;
     
-    pwm_setDutyCycle(output);
+		if (output > 100) {
+		  output = 100;
+		}
+		if (output < 0) {
+			output = 0;
+		}
     duty_cycle = output;            // For debug viewing
-
+    pwm_setDutyCycle(output);
     // Read the ADC value for current monitoring, actual conversion into meaningful units 
     // will be performed by STMStudio
     if(ADC1->ISR & ADC_ISR_EOC) {   // If the ADC has new data for us
